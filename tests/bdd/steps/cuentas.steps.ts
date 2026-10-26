@@ -562,7 +562,9 @@ Then(
       errorEsperado
     );
   }
-  Given(
+);
+
+Given(
   "que el cliente tiene una cuenta activa",
   async function (this: LoansWorld) {
     await this.cuentas.ingresarConCorreoAutorizado();
