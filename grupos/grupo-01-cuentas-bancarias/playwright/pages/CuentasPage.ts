@@ -1,364 +1,613 @@
-import { expect, type Page } from "@playwright/test";
+import { Given, When, Then } from "@cucumber/cucumber";
+import { expect } from "@playwright/test";
+import { LoansWorld } from "../support/loans.world";
 
-export class CuentasPage {
-  constructor(private readonly page: Page) {}
+// =======================================================
+// GRUPO 01 - CUENTAS BANCARIAS
+// =======================================================
 
-  // 1. INICIAR SESION
-  async ingresarConCorreoAutorizado(): Promise<void> {
-    const email =
-      process.env.TEST_ADMIN_EMAIL || "admin@aiquaa.com";
+// -------------------------------------------------------
+// RF-G1-01 - LISTAR CUENTAS
+// -------------------------------------------------------
 
-    await this.page.goto(
-      "https://aiquaa-sandbox-web.vercel.app/auth/login",
-      { waitUntil: "domcontentloaded" }
-    );
-
-    await this.page
-      .locator(
-        'input[type="radio"], input[type="email"], input[type="text"]'
-      )
-      .first()
-      .waitFor({
-        state: "visible",
-        timeout: 15000,
-      });
-
-    if (this.page.url().includes("/curso")) {
-      const curso1 = this.page
-        .locator('input[type="radio"]')
-        .first();
-
-      await curso1.check();
-
-      await this.page
-        .getByRole("button", {
-          name: "Continuar",
-          exact: true,
-        })
-        .click();
-    }
-
-    const campoEmail = this.page
-      .locator(
-        'input[type="email"], input[type="text"]'
-      )
-      .first();
-
-    await campoEmail.waitFor({
-      state: "visible",
-      timeout: 15000,
-    });
-
-    await campoEmail.fill(email);
-
-    await this.page
-      .getByRole("button", {
-        name: "Ingresar",
-        exact: true,
-      })
-      .click();
-
-    await expect(
-      this.page.getByRole("heading", {
-        name: /Bienvenido/i,
-      })
-    ).toBeVisible({
-      timeout: 10000,
-    });
-
-    console.log("Inicio de sesion correcto");
+Given(
+  "que existen cuentas vigentes en el sistema",
+  async function (this: LoansWorld) {
+    await this.cuentas.listarCuentas();
   }
+);
 
-  // 2. ABRIR CUENTAS BANCARIAS
-  async abrirAplicacion(): Promise<void> {
-    await this.page.goto(
-      "https://aiquaa-sandbox-web.vercel.app/cuentas"
-    );
-
-    await expect(
-      this.page.getByRole("heading", {
-        name: "Cuentas",
-        exact: true,
-      })
-    ).toBeVisible();
-
-    console.log("Modulo de cuentas abierto");
+Given(
+  "que estoy autorizado para consultar cuentas",
+  async function (this: LoansWorld) {
+    await this.cuentas.listarCuentas();
   }
+);
 
-  // 3. CONSULTAR UNA CUENTA ACTIVA
-  async consultarCuentaActiva() {
-    const tabla = this.page.locator("table");
-
-    await expect(tabla).toBeVisible();
-
-    const filas = tabla.locator("tbody tr");
-
-    const activas = filas.filter({
-      has: this.page.getByRole("cell", {
-        name: "Sí",
-        exact: true,
-      }),
-    });
-
-    await expect(
-      activas.first()
-    ).toBeVisible();
-
-    console.log("Cuenta activa encontrada");
-
-    return activas.first();
+When(
+  "consulto el listado de cuentas",
+  async function (this: LoansWorld) {
+    await this.cuentas.listarCuentas();
   }
+);
 
-  // 4. VALIDAR SALDO Y MONEDA
-  async validarSaldoYMoneda(): Promise<void> {
-    const fila =
-      await this.consultarCuentaActiva();
-
-    const celdas = fila.locator("td");
-
-    const moneda = (
-      await celdas.nth(4).innerText()
-    ).trim();
-
-    const saldo = (
-      await celdas.nth(5).innerText()
-    ).trim();
-
-    expect(["PYG", "USD"]).toContain(moneda);
-
-    expect(saldo).toMatch(
-      /^(PYG|USD)\s+[\d.,]+$/
-    );
-
-    expect(saldo).toContain(moneda);
-
-    console.log("Moneda:", moneda);
-    console.log("Saldo:", saldo);
-    console.log("Validacion correcta");
-  }
-
-  // 5. CONFIGURACION API
-  private readonly apiUrl =
-    process.env.API_URL ||
-    "https://aiquaa-sandbox-api.vercel.app";
-
-  private readonly apiKey =
-    process.env.API_KEY || "";
-
-  ultimoStatus = 0;
-  ultimaRespuesta: any = null;
-  cuentaIdActual = 0;
-
-  // 6. EJECUTAR REQUEST
-  private async ejecutarRequest(
-    metodo:
-      | "GET"
-      | "POST"
-      | "PUT"
-      | "PATCH"
-      | "DELETE",
-    ruta: string,
-    data?: any
-  ): Promise<void> {
-    const response =
-      await this.page.context().request.fetch(
-        `${this.apiUrl}${ruta}`,
-        {
-          method: metodo,
-          headers: {
-            "x-api-key": this.apiKey,
-            "Content-Type":
-              "application/json",
-          },
-          data,
-        }
-      );
-
-    this.ultimoStatus =
-      response.status();
-
-    try {
-      this.ultimaRespuesta =
-        await response.json();
-    } catch {
-      this.ultimaRespuesta = null;
-    }
-
-    console.log(
-      metodo,
-      ruta,
-      "HTTP:",
-      this.ultimoStatus,
-      this.ultimaRespuesta
-    );
-  }
-
-  // 7. LISTAR CUENTAS
-  async listarCuentas(): Promise<void> {
-    await this.ejecutarRequest(
-      "GET",
-      "/api/v2/cuentas"
-    );
-
-    if (
-      this.ultimoStatus === 200 &&
-      Array.isArray(
-        this.ultimaRespuesta?.data
-      ) &&
-      this.ultimaRespuesta.data.length > 0
-    ) {
-      this.cuentaIdActual =
-        this.ultimaRespuesta.data[0].id;
-    }
-  }
-
-  // 8. LISTAR CUENTAS POR ESTADO
-  async listarCuentasPorEstado(
+When(
+  "consulto las cuentas con estado {string}",
+  async function (
+    this: LoansWorld,
     estado: string
-  ): Promise<void> {
-    await this.ejecutarRequest(
-      "GET",
-      `/api/v2/cuentas?estado=${encodeURIComponent(
-        estado
-      )}`
+  ) {
+    await this.cuentas.listarCuentasPorEstado(
+      estado
     );
   }
+);
 
-  // 9. CONSULTAR CUENTA POR ID
-  async consultarCuenta(
-    id: number
-  ): Promise<void> {
-    this.cuentaIdActual = id;
+Then(
+  "los datos deben contener únicamente cuentas vigentes",
+  async function (this: LoansWorld) {
+    const data =
+      this.cuentas.ultimaRespuesta?.data;
 
-    await this.ejecutarRequest(
-      "GET",
-      `/api/v2/cuentas/${id}`
-    );
+    expect(Array.isArray(data)).toBeTruthy();
+
+    for (const cuenta of data) {
+      expect(cuenta.activa).toBe(true);
+    }
   }
+);
 
-  // 10. ABRIR CUENTA
-  async abrirCuenta(
-    usuarioId: number,
+// -------------------------------------------------------
+// RF-G1-02 - ABRIR CUENTA
+// -------------------------------------------------------
+
+Given(
+  "que existe un usuario válido",
+  async function (this: LoansWorld) {
+    // Usuario sembrado del sandbox.
+    expect(1).toBeGreaterThan(0);
+  }
+);
+
+When(
+  "solicito abrir una cuenta de tipo {string} en moneda {string}",
+  async function (
+    this: LoansWorld,
     tipoCuenta: string,
     moneda: string
-  ): Promise<void> {
-    await this.ejecutarRequest(
-      "POST",
-      "/api/v2/cuentas",
-      {
-        usuarioId,
-        tipoCuenta,
-        moneda,
-      }
-    );
-
-    if (
-      this.ultimoStatus === 201 &&
-      this.ultimaRespuesta?.data?.id
-    ) {
-      this.cuentaIdActual =
-        this.ultimaRespuesta.data.id;
-    }
-  }
-
-  // 11. MODIFICAR CUENTA
-  async modificarCuenta(
-    id: number,
-    tipoCuenta: string,
-    moneda?: string
-  ): Promise<void> {
-    const body: any = {
+  ) {
+    await this.cuentas.abrirCuenta(
+      1,
       tipoCuenta,
-    };
-
-    if (moneda !== undefined) {
-      body.moneda = moneda;
-    }
-
-    await this.ejecutarRequest(
-      "PUT",
-      `/api/v2/cuentas/${id}`,
-      body
+      moneda
     );
   }
+);
 
-  // 12. ELIMINAR CUENTA
-  async eliminarCuenta(
-    id: number
-  ): Promise<void> {
-    await this.ejecutarRequest(
-      "DELETE",
-      `/api/v2/cuentas/${id}`
+When(
+  "solicito abrir una cuenta con moneda {string}",
+  async function (
+    this: LoansWorld,
+    moneda: string
+  ) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      moneda
     );
   }
+);
 
-  // 13. CAMBIAR ESTADO
-  async cambiarEstado(
-    id: number,
+Then(
+  "la cuenta debe crearse con saldo {string}",
+  async function (
+    this: LoansWorld,
+    saldoEsperado: string
+  ) {
+    expect(
+      this.cuentas.ultimaRespuesta?.data?.saldo
+    ).toBe(saldoEsperado);
+  }
+);
+
+Then(
+  "el estado debe ser {string}",
+  async function (
+    this: LoansWorld,
+    estadoEsperado: string
+  ) {
+    expect(
+      this.cuentas.ultimaRespuesta?.data?.estado
+    ).toBe(estadoEsperado);
+  }
+);
+
+Then(
+  "el número de cuenta debe tener 10 dígitos",
+  async function (this: LoansWorld) {
+    const numeroCuenta =
+      String(
+        this.cuentas.ultimaRespuesta?.data
+          ?.numero_cuenta
+      );
+
+    expect(numeroCuenta).toMatch(/^\d{10}$/);
+  }
+);
+
+// -------------------------------------------------------
+// RF-G1-03 - CONSULTAR CUENTA
+// -------------------------------------------------------
+
+Given(
+  "que existe una cuenta vigente",
+  async function (this: LoansWorld) {
+    await this.cuentas.listarCuentas();
+
+    expect(
+      this.cuentas.cuentaIdActual
+    ).toBeGreaterThan(0);
+  }
+);
+
+When(
+  "consulto la cuenta por su identificador",
+  async function (this: LoansWorld) {
+    await this.cuentas.consultarCuenta(
+      this.cuentas.cuentaIdActual
+    );
+  }
+);
+
+When(
+  "consulto una cuenta que no existe",
+  async function (this: LoansWorld) {
+    await this.cuentas.consultarCuenta(
+      999999999
+    );
+  }
+);
+
+Then(
+  "el identificador devuelto debe coincidir con el solicitado",
+  async function (this: LoansWorld) {
+    expect(
+      this.cuentas.ultimaRespuesta?.data?.id
+    ).toBe(
+      this.cuentas.cuentaIdActual
+    );
+  }
+);
+
+// -------------------------------------------------------
+// RF-G1-04 - MODIFICAR CUENTA
+// -------------------------------------------------------
+
+When(
+  "reemplazo su tipo de cuenta y moneda por valores válidos",
+  async function (this: LoansWorld) {
+    await this.cuentas.modificarCuenta(
+      this.cuentas.cuentaIdActual,
+      "corriente",
+      "PYG"
+    );
+  }
+);
+
+When(
+  "intento modificarla enviando solo el tipo de cuenta",
+  async function (this: LoansWorld) {
+    await this.cuentas.modificarCuenta(
+      this.cuentas.cuentaIdActual,
+      "corriente"
+    );
+  }
+);
+
+Then(
+  "los nuevos valores deben reflejarse al consultar nuevamente la cuenta",
+  async function (this: LoansWorld) {
+    await this.cuentas.consultarCuenta(
+      this.cuentas.cuentaIdActual
+    );
+
+    expect(
+      this.cuentas.ultimaRespuesta?.data
+        ?.tipo_cuenta
+    ).toBe("corriente");
+
+    expect(
+      this.cuentas.ultimaRespuesta?.data
+        ?.moneda
+    ).toBe("PYG");
+  }
+);
+
+// -------------------------------------------------------
+// RF-G1-05 - DAR DE BAJA
+// -------------------------------------------------------
+
+Given(
+  "que existe una cuenta vigente con saldo cero",
+  async function (this: LoansWorld) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+
+    expect(
+      this.cuentas.cuentaIdActual
+    ).toBeGreaterThan(0);
+  }
+);
+
+Given(
+  "que existe una cuenta vigente con saldo mayor que cero",
+  async function (this: LoansWorld) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+
+    await this.cuentas.registrarMovimiento(
+      this.cuentas.cuentaIdActual,
+      "credito",
+      100000
+    );
+  }
+);
+
+When(
+  "solicito dar de baja la cuenta",
+  async function (this: LoansWorld) {
+    await this.cuentas.eliminarCuenta(
+      this.cuentas.cuentaIdActual
+    );
+  }
+);
+
+Then(
+  "la cuenta ya no debe aparecer en el listado de cuentas vigentes",
+  async function (this: LoansWorld) {
+    const id =
+      this.cuentas.cuentaIdActual;
+
+    await this.cuentas.consultarCuenta(id);
+
+    expect(
+      this.cuentas.ultimoStatus
+    ).toBe(404);
+  }
+);
+
+// -------------------------------------------------------
+// RF-G1-06 - CAMBIAR ESTADO
+// -------------------------------------------------------
+
+Given(
+  "que existe una cuenta en estado {string}",
+  async function (
+    this: LoansWorld,
     estado: string
-  ): Promise<void> {
-    await this.ejecutarRequest(
-      "PATCH",
-      `/api/v2/cuentas/${id}/estado`,
-      {
-        estado,
-      }
+  ) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+
+    if (estado !== "activa") {
+      await this.cuentas.cambiarEstado(
+        this.cuentas.cuentaIdActual,
+        estado
+      );
+    }
+  }
+);
+
+Given(
+  "que existe una cuenta con saldo mayor que cero",
+  async function (this: LoansWorld) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+
+    await this.cuentas.registrarMovimiento(
+      this.cuentas.cuentaIdActual,
+      "credito",
+      100000
     );
   }
+);
 
-  // 14. CONSULTAR SALDO
-  async consultarSaldo(
-    id: number
-  ): Promise<void> {
-    await this.ejecutarRequest(
-      "GET",
-      `/api/v2/cuentas/${id}/saldo`
+When(
+  "cambio su estado a {string}",
+  async function (
+    this: LoansWorld,
+    estado: string
+  ) {
+    await this.cuentas.cambiarEstado(
+      this.cuentas.cuentaIdActual,
+      estado
     );
   }
+);
 
-  // 15. CONSULTAR MOVIMIENTOS
-  async consultarMovimientos(
-    id: number
-  ): Promise<void> {
-    await this.ejecutarRequest(
-      "GET",
-      `/api/v2/cuentas/${id}/movimientos`
+When(
+  "intento cambiar su estado a {string}",
+  async function (
+    this: LoansWorld,
+    estado: string
+  ) {
+    await this.cuentas.cambiarEstado(
+      this.cuentas.cuentaIdActual,
+      estado
     );
   }
+);
 
-  // 16. REGISTRAR MOVIMIENTO
-  async registrarMovimiento(
-    id: number,
+Then(
+  "el estado de la cuenta debe ser {string}",
+  async function (
+    this: LoansWorld,
+    estadoEsperado: string
+  ) {
+    expect(
+      this.cuentas.ultimaRespuesta?.data?.estado
+    ).toBe(estadoEsperado);
+  }
+);
+
+// -------------------------------------------------------
+// RF-G1-07 - CONSULTAR SALDO
+// -------------------------------------------------------
+
+Given(
+  "que existe una cuenta recién abierta sin movimientos",
+  async function (this: LoansWorld) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+  }
+);
+
+When(
+  "consulto el saldo de la cuenta",
+  async function (this: LoansWorld) {
+    await this.cuentas.consultarSaldo(
+      this.cuentas.cuentaIdActual
+    );
+  }
+);
+
+Then(
+  "el saldo debe ser {string}",
+  async function (
+    this: LoansWorld,
+    saldoEsperado: string
+  ) {
+    expect(
+      this.cuentas.ultimaRespuesta?.data?.saldo
+    ).toBe(saldoEsperado);
+  }
+);
+
+Then(
+  "el último movimiento debe ser nulo",
+  async function (this: LoansWorld) {
+    expect(
+      this.cuentas.ultimaRespuesta?.data
+        ?.ultimo_movimiento
+    ).toBeNull();
+  }
+);
+
+// -------------------------------------------------------
+// RF-G1-08 - MOVIMIENTOS
+// -------------------------------------------------------
+
+Given(
+  "que existe una cuenta recién abierta",
+  async function (this: LoansWorld) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+  }
+);
+
+When(
+  "consulto los movimientos de la cuenta",
+  async function (this: LoansWorld) {
+    await this.cuentas.consultarMovimientos(
+      this.cuentas.cuentaIdActual
+    );
+  }
+);
+
+Then(
+  "la lista de movimientos debe estar vacía",
+  async function (this: LoansWorld) {
+    expect(
+      this.cuentas.ultimaRespuesta?.data
+    ).toEqual([]);
+  }
+);
+
+// -------------------------------------------------------
+// RF-G1-09 - REGISTRAR MOVIMIENTOS
+// -------------------------------------------------------
+
+Given(
+  "que existe una cuenta activa con saldo cero",
+  async function (this: LoansWorld) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+  }
+);
+
+Given(
+  "que existe una cuenta activa con saldo 500000",
+  async function (this: LoansWorld) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+
+    await this.cuentas.registrarMovimiento(
+      this.cuentas.cuentaIdActual,
+      "credito",
+      500000
+    );
+  }
+);
+
+Given(
+  "que existe una cuenta activa con saldo 100000",
+  async function (this: LoansWorld) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+
+    await this.cuentas.registrarMovimiento(
+      this.cuentas.cuentaIdActual,
+      "credito",
+      100000
+    );
+  }
+);
+
+Given(
+  "que existe una cuenta activa",
+  async function (this: LoansWorld) {
+    await this.cuentas.abrirCuenta(
+      1,
+      "ahorro",
+      "PYG"
+    );
+  }
+);
+
+When(
+  "registro un movimiento de tipo {string} por {int}",
+  async function (
+    this: LoansWorld,
     tipo: string,
-    monto: number | string
-  ): Promise<void> {
-    await this.ejecutarRequest(
-      "POST",
-      `/api/v2/cuentas/${id}/movimientos`,
-      {
-        tipo,
-        monto,
-        descripcion:
-          "Prueba automatizada Grupo 1",
-      }
+    monto: number
+  ) {
+    await this.cuentas.registrarMovimiento(
+      this.cuentas.cuentaIdActual,
+      tipo,
+      monto
     );
   }
+);
 
-  // 17. VALIDAR CODIGO HTTP
-  validarStatus(
-    esperado: number
-  ): void {
-    expect(
-      this.ultimoStatus
-    ).toBe(esperado);
+When(
+  "intento registrar un débito por {int}",
+  async function (
+    this: LoansWorld,
+    monto: number
+  ) {
+    await this.cuentas.registrarMovimiento(
+      this.cuentas.cuentaIdActual,
+      "debito",
+      monto
+    );
   }
+);
 
-  // 18. VALIDAR CODIGO DE ERROR
-  validarError(
+When(
+  "intento registrar un movimiento con monto {int}",
+  async function (
+    this: LoansWorld,
+    monto: number
+  ) {
+    await this.cuentas.registrarMovimiento(
+      this.cuentas.cuentaIdActual,
+      "credito",
+      monto
+    );
+  }
+);
+
+When(
+  "intento registrar un movimiento con monto {string}",
+  async function (
+    this: LoansWorld,
+    monto: string
+  ) {
+    await this.cuentas.registrarMovimiento(
+      this.cuentas.cuentaIdActual,
+      "credito",
+      monto
+    );
+  }
+);
+
+Then(
+  "el saldo posterior debe ser {string}",
+  async function (
+    this: LoansWorld,
+    saldoEsperado: string
+  ) {
+    expect(
+      this.cuentas.ultimaRespuesta?.data
+        ?.saldo_posterior
+    ).toBe(saldoEsperado);
+  }
+);
+
+Then(
+  "el saldo de la cuenta no debe cambiar",
+  async function (this: LoansWorld) {
+    await this.cuentas.consultarSaldo(
+      this.cuentas.cuentaIdActual
+    );
+
+    expect(
+      this.cuentas.ultimaRespuesta?.data?.saldo
+    ).toBe("100000.00");
+  }
+);
+
+// -------------------------------------------------------
+// STEPS COMUNES
+// -------------------------------------------------------
+
+Then(
+  "la respuesta debe ser {int}",
+  async function (
+    this: LoansWorld,
+    statusEsperado: number
+  ) {
+    this.cuentas.validarStatus(
+      statusEsperado
+    );
+  }
+);
+
+Then(
+  "el error debe ser {string}",
+  async function (
+    this: LoansWorld,
     errorEsperado: string
-  ): void {
-    expect(
-      this.ultimaRespuesta?.error?.code
-    ).toBe(errorEsperado);
+  ) {
+    this.cuentas.validarError(
+      errorEsperado
+    );
   }
-}
+);
